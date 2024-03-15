@@ -20,33 +20,45 @@ func main() {
         return
     }
 
+    flaggedFolders := make(map[string]bool)
+
     for _, volume := range volumes {
         if volume.IsDir() {
             volumePath := filepath.Join(volumesDir, volume.Name())
-            languagePercentages, fileFlags := analyzeFiles(volumePath, 1)
-            if len(fileFlags) > 0 {
+            languagePercentages, fileFlags, folderFlags := analyzeFiles(volumePath, 1)
+            if len(fileFlags) > 0 || len(folderFlags) > 0 {
                 printLanguagePercentages(volumePath, languagePercentages, fileFlags)
+                for folder := range folderFlags {
+                    flaggedFolders[folder] = true
+                }
             }
         }
     }
+
+    printFlaggedFoldersSummary(flaggedFolders)
 }
 
-func analyzeFiles(dirPath string, depth int) (map[string]float64, map[string][]string) {
+func analyzeFiles(dirPath string, depth int) (map[string]float64, map[string][]string, map[string]bool) {
     if depth > maxDepth {
-        return nil, nil
+        return nil, nil, nil
     }
 
     languageCounts := make(map[string]int)
     totalFiles := 0
     fileFlags := make(map[string][]string)
+    folderFlags := make(map[string]bool)
 
     err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
         if err != nil {
             return err
         }
 
-        if info.IsDir() && (info.Name() == "node_modules" || strings.HasPrefix(info.Name(), "node_modules"+string(os.PathSeparator))) {
-            return filepath.SkipDir // skip node_modules directory and its subdirectories
+        if info.IsDir() {
+            if info.Name() == "node_modules" || strings.HasPrefix(info.Name(), "node_modules"+string(os.PathSeparator)) ||
+                strings.HasPrefix(info.Name(), ".") || strings.HasPrefix(info.Name(), "/assets/") {
+                folderFlags[path] = true
+                return filepath.SkipDir // skip node_modules, .*, and /assets/ directories and their subdirectories
+            }
         }
 
         if !info.IsDir() {
@@ -73,7 +85,7 @@ func analyzeFiles(dirPath string, depth int) (map[string]float64, map[string][]s
 
     if err != nil {
         fmt.Printf("Error walking directory %s: %v\n", dirPath, err)
-        return nil, nil
+        return nil, nil, nil
     }
 
     languagePercentages := make(map[string]float64)
@@ -85,17 +97,20 @@ func analyzeFiles(dirPath string, depth int) (map[string]float64, map[string][]s
     for subDir, _ := range fileFlags {
         subDirPath := filepath.Dir(subDir)
         if subDirPath != dirPath {
-            subdirLanguagePercentages, subdirFileFlags := analyzeFiles(subDirPath, depth+1)
+            subdirLanguagePercentages, subdirFileFlags, subdirFolderFlags := analyzeFiles(subDirPath, depth+1)
             for ext, percentage := range subdirLanguagePercentages {
                 languagePercentages[ext] += percentage
             }
             for path, flags := range subdirFileFlags {
                 fileFlags[path] = flags
             }
+            for folder := range subdirFolderFlags {
+                folderFlags[folder] = true
+            }
         }
     }
 
-    return languagePercentages, fileFlags
+    return languagePercentages, fileFlags, folderFlags
 }
 
 func readFileWithLimit(path string, limit int64) ([]byte, error) {
@@ -153,4 +168,13 @@ func printLanguagePercentages(dirPath string, languagePercentages map[string]flo
     }
 
     fmt.Println()
+}
+
+func printFlaggedFoldersSummary(flaggedFolders map[string]bool) {
+    if len(flaggedFolders) > 0 {
+        fmt.Println("\nThese are all of the flagged volumes:")
+        for folder := range flaggedFolders {
+            fmt.Println(folder)
+        }
+    }
 }
