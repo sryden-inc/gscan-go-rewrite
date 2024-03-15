@@ -76,7 +76,7 @@ func analyzeFiles(dirPath string, depth int) (map[string]float64, map[string][]s
                     return nil
                 }
 
-                flags := checkFlags(string(content))
+                flags := checkFlags(string(content), path)
                 if len(flags) > 0 {
                     fileFlags[path] = flags
                 }
@@ -135,13 +135,19 @@ func readFileWithLimit(path string, limit int64) ([]byte, error) {
     return ioutil.ReadAll(file)
 }
 
-func checkFlags(content string) []string {
+func checkFlags(content string, path string) []string {
     flags := []string{}
     if strings.Contains(content, "nezha") {
         flags = append(flags, "Nezha was detected")
     }
     if containsChinese(content) {
         flags = append(flags, "Contains Chinese characters")
+    }
+    if filepath.Ext(path) == ".sh" {
+        flags = append(flags, "File ends with .sh")
+    }
+    if strings.Contains(content, "argo") || strings.Contains(content, "cloudflare") {
+        flags = append(flags, "File contains 'argo' or 'cloudflare'")
     }
     return flags
 }
