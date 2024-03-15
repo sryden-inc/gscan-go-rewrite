@@ -1,15 +1,16 @@
 package main
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"strings"
-	"unicode"
+    "fmt"
+    "io/ioutil"
+    "os"
+    "path/filepath"
+    "strings"
+    "unicode"
 )
 
 const maxFileSize = 1024 * 1024 * 10 // 10 MB
+const maxDepth = 3                   // maximum depth of directory traversal
 
 func main() {
     volumesDir := "/var/lib/pterodactyl/volumes/"
@@ -22,7 +23,7 @@ func main() {
     for _, volume := range volumes {
         if volume.IsDir() {
             volumePath := filepath.Join(volumesDir, volume.Name())
-            languagePercentages, fileFlags := analyzeFiles(volumePath)
+            languagePercentages, fileFlags := analyzeFiles(volumePath, 1)
             if len(fileFlags) > 0 {
                 printLanguagePercentages(volumePath, languagePercentages, fileFlags)
             }
@@ -30,7 +31,11 @@ func main() {
     }
 }
 
-func analyzeFiles(dirPath string) (map[string]float64, map[string][]string) {
+func analyzeFiles(dirPath string, depth int) (map[string]float64, map[string][]string) {
+    if depth > maxDepth {
+        return nil, nil
+    }
+
     languageCounts := make(map[string]int)
     totalFiles := 0
     fileFlags := make(map[string][]string)
@@ -38,6 +43,10 @@ func analyzeFiles(dirPath string) (map[string]float64, map[string][]string) {
     err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
         if err != nil {
             return err
+        }
+
+        if info.IsDir() && (info.Name() == "node_modules" || strings.HasPrefix(info.Name(), "node_modules"+string(os.PathSeparator))) {
+            return filepath.SkipDir // skip node_modules directory and its subdirectories
         }
 
         if !info.IsDir() {
@@ -54,6 +63,7 @@ func analyzeFiles(dirPath string) (map[string]float64, map[string][]string) {
                     fileFlags[path] = flags
                 }
             }
+
             languageCounts[ext]++
             totalFiles++
         }
@@ -70,6 +80,19 @@ func analyzeFiles(dirPath string) (map[string]float64, map[string][]string) {
     for ext, count := range languageCounts {
         percentage := float64(count) / float64(totalFiles) * 100.0
         languagePercentages[ext] = percentage
+    }
+
+    for subDir, _ := range fileFlags {
+        subDirPath := filepath.Dir(subDir)
+        if subDirPath != dirPath {
+            subdirLanguagePercentages, subdirFileFlags := analyzeFiles(subDirPath, depth+1)
+            for ext, percentage := range subdirLanguagePercentages {
+                languagePercentages[ext] += percentage
+            }
+            for path, flags := range subdirFileFlags {
+                fileFlags[path] = flags
+            }
+        }
     }
 
     return languagePercentages, fileFlags
@@ -101,9 +124,6 @@ func checkFlags(content string) []string {
     }
     if containsChinese(content) {
         flags = append(flags, "Contains Chinese characters")
-    }
-    if strings.Contains(content, "root") {
-        flags = append(flags, "Contains references to 'root'")
     }
     return flags
 }
