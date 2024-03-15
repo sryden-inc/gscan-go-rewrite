@@ -22,7 +22,7 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Build
-      run: go build -o my-program
+      run: go build -o gscan
 
     - name: Upload artifact
       uses: actions/upload-artifact@v2
