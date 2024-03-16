@@ -1,16 +1,24 @@
 package main
 
 import (
+    "bytes"
+    "encoding/json"
     "fmt"
     "io/ioutil"
+    "net/http"
     "os"
     "path/filepath"
     "strings"
+    "time"
     "unicode"
 )
 
 const maxFileSize = 1024 * 1024 * 10 // 10 MB
 const maxDepth = 3                   // maximum depth of directory traversal
+
+type DiscordWebhookPayload struct {
+    Content string `json:"content"`
+}
 
 func main() {
     volumesDir := "/var/lib/pterodactyl/volumes/"
@@ -33,7 +41,46 @@ func main() {
         }
     }
 
-    printFlagSummary(allFileFlags)
+    sendSummaryToDiscord(allFileFlags)
+}
+
+func sendSummaryToDiscord(fileFlags map[string][]string) {
+    var summary bytes.Buffer
+    now := time.Now().Format("2006-01-02 15:04:05")
+    summary.WriteString(fmt.Sprintf("Summary of flags found in all volumes (%s):\n", now))
+
+    if len(fileFlags) == 0 {
+        summary.WriteString("No flags found in any volume.")
+    } else {
+        for path, flags := range fileFlags {
+            summary.WriteString(fmt.Sprintf("%s:\n", path))
+            for _, flag := range flags {
+                summary.WriteString(fmt.Sprintf("- %s\n", flag))
+            }
+        }
+    }
+
+    payload := DiscordWebhookPayload{
+        Content: summary.String(),
+    }
+
+    payloadBytes, err := json.Marshal(payload)
+    if err != nil {
+        fmt.Println("Error marshaling Discord webhook payload:", err)
+        return
+    }
+
+    webhookURL := "https://ptb.discord.com/api/webhooks/1218361125230346250/TDiqC-OHXuJDV2halDLzOHLqGtJMvRWaIMlsHxsX0dIsCRhm1bgtFIXm8c2GyvLX8tBa"
+    resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(payloadBytes))
+    if err != nil {
+        fmt.Println("Error sending message to Discord webhook:", err)
+        return
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        fmt.Printf("Unexpected response status code from Discord webhook: %d\n", resp.StatusCode)
+    }
 }
 
 func analyzeFiles(dirPath string, depth int) (map[string]float64, map[string][]string) {
